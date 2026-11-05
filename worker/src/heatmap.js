@@ -33,7 +33,6 @@ export function heatmap(summaries, start, end) {
 }
 </style>
 <g font-family="system-ui,sans-serif" font-size="10" fill="#24292f">
-<text x="12" y="15" font-size="12">Coding activity · Asia/Shanghai</text>
 <text x="12" y="62">Mon</text><text x="12" y="88">Wed</text><text x="12" y="114">Fri</text>
 ${elements.join('\n')}
 <text x="565" y="157">Less</text>${colors.map((color, i) => `<rect class="level-${i}" x="${595 + i * 13}" y="148" width="10" height="10" rx="2" fill="${color}"/>`).join('')}<text x="665" y="157">More</text>
