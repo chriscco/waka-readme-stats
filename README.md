@@ -662,4 +662,4 @@ The snapshot is private, capped at 1 MiB, and remains unchanged until the next m
 sync. Daily README updates reuse it and still deduplicate against current GitHub SHAs.
 No local scheduler is installed. Snapshot mode takes precedence over direct Gitea mode.
 
-Gitea collection and snapshot transfers use direct HTTPS connections, ignoring proxy environment variables.
+Gitea collection uses direct HTTPS connections. The manual Worker upload honors `https_proxy` / `HTTPS_PROXY`; it does not use `all_proxy`.

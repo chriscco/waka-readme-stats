@@ -104,6 +104,38 @@ class GiteaCommitTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(ValueError, "Invalid Gitea snapshot"):
                 validate_commit_dates(bad)
 
+    async def test_manual_import_uploads_only_validated_snapshot_and_checks_acknowledgement(self):
+        import runpy
+        import tempfile
+        from types import SimpleNamespace
+
+        sync = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/sync-gitea.py"))["sync"]
+        data = {"a" * 40: "2026-11-01T17:30:00Z"}
+
+        def handler(request):
+            self.assertEqual(request.method, "PUT")
+            self.assertEqual(request.headers["Authorization"], "Bearer worker-secret")
+            import json
+
+            self.assertEqual(json.loads(request.content), data)
+            return httpx.Response(200, json={"count": 1})
+
+        with tempfile.TemporaryDirectory() as directory:
+            key, snapshot = Path(directory) / "key", Path(directory) / "snapshot.json"
+            key.write_text("worker-secret")
+            import json
+
+            snapshot.write_text(json.dumps(data))
+            args = SimpleNamespace(worker_api="https://stats.test/api/v1/", key_file=key, snapshot=snapshot)
+            client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            with patch("httpx.AsyncClient", return_value=client):
+                await sync(args)
+            snapshot.write_text("{}")
+            with patch("httpx.AsyncClient") as client_factory:
+                with self.assertRaisesRegex(ValueError, "Invalid Gitea snapshot"):
+                    await sync(args)
+                client_factory.assert_not_called()
+
 
 class GiteaIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_gitea_only_supplements_distribution_and_excludes_github_shas(self):

@@ -30,7 +30,7 @@ async def sync(args):
     body = json.dumps(commits, separators=(",", ":")).encode()
     if len(body) > 1048576:
         raise ValueError("Snapshot exceeds the Worker's 1 MiB limit")
-    async with httpx.AsyncClient(timeout=60, follow_redirects=False, trust_env=False) as client:
+    async with httpx.AsyncClient(timeout=60, follow_redirects=False, trust_env=False, proxy=os.getenv("https_proxy") or os.getenv("HTTPS_PROXY")) as client:
         try:
             response = await client.put(
                 args.worker_api.rstrip("/") + "/users/current/gitea/commits",
