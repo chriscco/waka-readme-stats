@@ -25,6 +25,7 @@ class EnvironmentManager:
 
     # stats for the author or the one with the token
     GH_USER = getenv("INPUT_GH_USER", "").strip()
+    GITEA_USE_SNAPSHOT = getenv("INPUT_GITEA_USE_SNAPSHOT", "False").lower() in _TRUTHY
     GITEA_API_URL = getenv("INPUT_GITEA_API_URL", "").strip()
     GITEA_API_TOKEN = (getenv("INPUT_GITEA_API_TOKEN") or getenv("gitea", "")).strip()
     WAKATIME_API_KEY = getenv("INPUT_WAKATIME_API_KEY", "")

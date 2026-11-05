@@ -14,9 +14,10 @@ before(async () => {
   db = await mf.getD1Database('DB');
   await db.exec((await readFile('migrations/0001.sql', 'utf8')).replaceAll('\n', ' '));
   await db.exec((await readFile('migrations/0002.sql', 'utf8')).replaceAll('\n', ' '));
+  await db.exec((await readFile('migrations/0003.sql', 'utf8')).replaceAll('\n', ' '));
 });
 after(async () => { await mf?.dispose(); });
-beforeEach(async () => { await db.batch([db.prepare('DELETE FROM heartbeats'), db.prepare('DELETE FROM daily_summaries'), db.prepare('DELETE FROM historical_summaries')]); });
+beforeEach(async () => { await db.batch([db.prepare('DELETE FROM heartbeats'), db.prepare('DELETE FROM daily_summaries'), db.prepare('DELETE FROM historical_summaries'), db.prepare('DELETE FROM gitea_snapshot')]); });
 function request(path, { auth = `Bearer ${key}`, ...options } = {}) {
   return mf.dispatchFetch(base + path, { ...options, headers: { Authorization: auth, ...options.headers } });
 }
@@ -238,4 +239,32 @@ test('a large dirty backlog returns retryable failure instead of incomplete tota
   const second = await request('stats/all_time');
   assert.equal(second.status, 200);
   assert.equal((await second.json()).data.total_seconds, 6000);
+});
+
+
+test('Gitea snapshot requires auth, replaces atomically, and cannot alter coding totals', async () => {
+  assert.equal((await request('gitea/commits', { auth: '' })).status, 401);
+  assert.equal((await request('gitea/commits')).status, 404);
+  const data = { ['a'.repeat(40)]: '2026-11-01T17:30:00Z' };
+  const put = value => request('gitea/commits', { method: 'PUT', body: JSON.stringify(value) });
+  assert.equal((await put(data)).status, 200);
+  assert.deepEqual((await (await request('gitea/commits')).json()).data, data);
+  for (const bad of [{ secret: 'private text' }, { ['b'.repeat(40)]: '2026-02-30T00:00:00Z' }, {}, [], null]) {
+    assert.equal((await put(bad)).status, 400);
+    assert.deepEqual((await (await request('gitea/commits')).json()).data, data);
+  }
+  assert.equal((await request('gitea/commits', { method: 'PUT', body: ' '.repeat(1048577) })).status, 413);
+  assert.equal((await request('gitea/commits', { method: 'DELETE' })).status, 405);
+  assert.equal((await (await request('stats/all_time')).json()).data.total_seconds, 0);
+  const replacement = { ['b'.repeat(40)]: '2026-11-02T01:00:00Z' };
+  assert.equal((await put(replacement)).status, 200);
+  assert.deepEqual((await (await request('gitea/commits')).json()).data, replacement);
+  await db.exec("CREATE TRIGGER reject_snapshot BEFORE UPDATE ON gitea_snapshot BEGIN SELECT RAISE(ABORT, 'private storage detail'); END;");
+  try {
+    const failure = await put(data);
+    assert.equal(failure.status, 503);
+    assert.doesNotMatch(await failure.text(), /private storage detail/);
+    assert.deepEqual((await (await request('gitea/commits')).json()).data, replacement);
+  } finally { await db.exec('DROP TRIGGER reject_snapshot'); }
+
 });

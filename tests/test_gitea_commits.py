@@ -85,11 +85,30 @@ class GiteaCommitTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await get_gitea_commit_dates("http://gitea.example.test", "secret")
 
+    async def test_worker_snapshot_uses_header_auth_and_validates_before_returning(self):
+        from gitea_commits import get_gitea_snapshot
+
+        data = {"a" * 40: "2026-11-01T17:30:00Z"}
+
+        def handler(request):
+            self.assertEqual(str(request.url), "https://stats.test/api/v1/users/current/gitea/commits")
+            self.assertEqual(request.headers["Authorization"], "Bearer secret")
+            return httpx.Response(200, json={"data": data})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with patch("gitea_commits.httpx.AsyncClient", return_value=client):
+            self.assertEqual(await get_gitea_snapshot("https://stats.test/api/v1/", "secret"), data)
+        from gitea_commits import validate_commit_dates
+
+        for bad in ({}, [], {"a" * 40: "2026-02-30T00:00:00Z"}, {"secret": "private message"}):
+            with self.assertRaisesRegex(ValueError, "Invalid Gitea snapshot"):
+                validate_commit_dates(bad)
+
 
 class GiteaIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_gitea_only_supplements_distribution_and_excludes_github_shas(self):
         flags = {name: False for name in vars(EM) if name.startswith("SHOW_")}
-        flags.update(SHOW_COMMIT=True, SHOW_DAYS_OF_WEEK=True, GITEA_API_URL="https://gitea.example.test", GITEA_API_TOKEN="secret")
+        flags.update(GITEA_USE_SNAPSHOT=False, SHOW_COMMIT=True, SHOW_DAYS_OF_WEEK=True, GITEA_API_URL="https://gitea.example.test", GITEA_API_TOKEN="secret")
         repos = [{"name": "existing"}]
         github = {"existing": {"main": {"a" * 40: "2026-11-01T17:30:00Z"}}}
         extra = {"a" * 40: "2026-11-01T17:30:00Z", "b" * 40: "2026-11-01T23:30:00Z"}
@@ -104,6 +123,11 @@ class GiteaIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     with patch.object(EM, "GITEA_API_URL", ""):
                         await main.get_waka_time_stats(repos, github)
                     collect.assert_not_awaited()
+                    with patch.object(EM, "GITEA_USE_SNAPSHOT", True), patch.object(main, "get_gitea_snapshot", AsyncMock(return_value=extra)) as snapshot:
+                        await main.get_waka_time_stats(repos, github)
+                        snapshot.assert_awaited_once_with(EM.WAKATIME_API_URL, EM.WAKATIME_API_KEY)
+                        collect.assert_not_awaited()
+                        self.assertEqual(render.call_args.args[-1], ["2026-11-01T23:30:00Z"])
 
     async def test_combined_dates_use_existing_timezone_and_buckets(self):
         commits = {"existing": {"main": {"a": "2026-11-01T17:30:00Z"}}}

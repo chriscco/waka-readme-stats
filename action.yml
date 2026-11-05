@@ -22,6 +22,11 @@ inputs:
     required: false
     default: "https://wakatime.com/api/v1/"
 
+  GITEA_USE_SNAPSHOT:
+    description: 'Read manually synced Gitea commit history from the personal Worker instead of accessing Gitea directly'
+    required: false
+    default: "False"
+
   GITEA_API_URL:
     description: 'Optional Gitea instance URL for adding your commits to time and weekday distributions'
     required: false

@@ -37,6 +37,7 @@ jobs:
         working-directory: generator
         env:
           INPUT_GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          INPUT_GITEA_USE_SNAPSHOT: 'False' # True for a manually synced internal Gitea instance
           INPUT_GITEA_API_URL: ${{ vars.GITEA_API_URL }}
           INPUT_GITEA_API_TOKEN: ${{ secrets.GITEA_API_TOKEN }}
           INPUT_GH_USER: ${{ github.repository_owner }}

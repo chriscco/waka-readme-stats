@@ -22,7 +22,7 @@ export async function authorized(request, key, url) {
   return difference === 0;
 }
 
-async function bodyJSON(request) {
+export async function bodyJSON(request, limit = 262144) {
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, 'JSON body required');
   const parts = [];
@@ -31,7 +31,7 @@ async function bodyJSON(request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 262144) { await reader.cancel(); throw new HttpError(413, 'Body exceeds 256 KiB'); }
+    if (size > limit) { await reader.cancel(); throw new HttpError(413, 'Body exceeds size limit'); }
     parts.push(value);
   }
   const bytes = new Uint8Array(size);

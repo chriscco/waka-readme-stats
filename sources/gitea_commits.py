@@ -15,7 +15,7 @@ async def get_gitea_commit_dates(base_url: str, token: str) -> dict[str, str]:
         raise ValueError("Missing Gitea API token")
 
     async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/") + "/api/v1/", headers={"Authorization": f"token {token}"}, timeout=30, follow_redirects=False
+        base_url=base_url.rstrip("/") + "/api/v1/", headers={"Authorization": f"token {token}"}, timeout=30, follow_redirects=False, trust_env=False
     ) as client:
 
         async def get(path, params=None):
@@ -100,3 +100,35 @@ async def get_gitea_commit_dates(base_url: str, token: str) -> dict[str, str]:
 
         await asyncio.gather(*(collect(repo) for repo in repos))
         return commits
+
+
+def validate_commit_dates(data):
+    if not isinstance(data, dict) or not data:
+        raise ValueError("Invalid Gitea snapshot")
+    for sha, date in data.items():
+        try:
+            if not fullmatch(r"(?:[a-f0-9]{40}|[a-f0-9]{64})", sha):
+                raise ValueError()
+            if not isinstance(date, str) or not fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", date):
+                raise ValueError()
+            datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ")
+        except (TypeError, ValueError):
+            raise ValueError("Invalid Gitea snapshot") from None
+    return data
+
+
+async def get_gitea_snapshot(api_url: str, key: str) -> dict[str, str]:
+    url = urlsplit(api_url)
+    if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment or not key:
+        raise ValueError("Gitea snapshot requires an HTTPS Worker API URL and key")
+    async with httpx.AsyncClient(timeout=30, follow_redirects=False, trust_env=False) as client:
+        try:
+            response = await client.get(api_url.rstrip("/") + "/users/current/gitea/commits", headers={"Authorization": f"Bearer {key}"})
+        except httpx.RequestError:
+            raise RuntimeError("Gitea snapshot network request failed") from None
+        if response.status_code != 200:
+            raise RuntimeError(f"Gitea snapshot unavailable: HTTP {response.status_code}")
+        try:
+            return validate_commit_dates(response.json()["data"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("Invalid Gitea snapshot") from None

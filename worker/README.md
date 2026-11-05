@@ -223,3 +223,16 @@ local Workers: both destinations received events, today returned the expected
 duration, and the SVG contained 365 dates. Cloudflare login, remote migration,
 deployment, live delivery and production quota/CPU behavior require separate
 account-level verification.
+
+## Private Gitea history snapshot
+
+Migration `0003.sql` adds an independent snapshot table. Authenticated
+`PUT /api/v1/users/current/gitea/commits` accepts a nonempty JSON object mapping
+commit SHA to UTC `YYYY-MM-DDTHH:MM:SSZ` timestamp, up to 1 MiB. It validates the
+whole object before a single atomic replacement. `GET` returns `{data, updated_at}`;
+missing snapshots return 404. Both routes use the existing Worker key. They never
+read or write coding heartbeats, daily summaries, or imported WakaTime history.
+
+Run `scripts/sync-gitea.py` from the project root to collect and replace this snapshot.
+See the root README for manual sync and profile configuration. No Gitea token is
+stored in D1 or sent to the Worker, and no local scheduler is installed.

@@ -638,3 +638,28 @@ is not included in repository language counts, code time or the coding heatmap.
 Request failures fail the update rather than publishing incomplete counts. Deleted
 repositories/branches and history unavailable to the token cannot be reconstructed.
 The runner must be able to reach the instance. Full history scans can take minutes.
+
+#### Manual sync for an internal Gitea instance
+
+If GitHub Actions cannot reach Gitea, set `INPUT_GITEA_USE_SNAPSHOT: 'True'`
+in the profile workflow. This reads the private `gitea/commits` snapshot from
+`INPUT_WAKATIME_API_URL` using the existing Worker key. Apply migration `0003.sql`
+and deploy the Worker before importing the first snapshot.
+
+From a computer that can reach Gitea, with the token in `gitea`, run:
+
+```sh
+.venv/bin/python scripts/sync-gitea.py --gitea-url https://YOUR-GITEA \
+  --worker-api https://YOUR-WORKER/api/v1/
+gh workflow run main.yml --repo YOUR-USER/YOUR-USER
+```
+
+The Worker key defaults to `~/.config/personal-coding-stats/ingest-key`;
+use `--key-file` to override it. To import a previous scan, add `--snapshot path.json`.
+The import atomically replaces only the Gitea snapshot (commit SHA and UTC timestamp),
+never coding data. Invalid, empty, oversized or failed scans do not replace it.
+The snapshot is private, capped at 1 MiB, and remains unchanged until the next manual
+sync. Daily README updates reuse it and still deduplicate against current GitHub SHAs.
+No local scheduler is installed. Snapshot mode takes precedence over direct Gitea mode.
+
+Gitea collection and snapshot transfers use direct HTTPS connections, ignoring proxy environment variables.
