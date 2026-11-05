@@ -45,8 +45,8 @@ jobs:
           INPUT_WAKATIME_API_URL: ${{ vars.CODING_API_URL }}
           INPUT_WAKATIME_API_KEY: ${{ secrets.CODING_API_KEY }}
           INPUT_SHOW_CODING_HEATMAP: 'True'
-          INPUT_SHOW_LANGUAGE: 'True'
-          INPUT_SHOW_EDITORS: 'True'
+          INPUT_SHOW_LANGUAGE: 'False'
+          INPUT_SHOW_EDITORS: 'False'
           INPUT_SHOW_TOTAL_CODE_TIME: 'True'
           INPUT_SHOW_AI_CODE_TIME: 'False'
           INPUT_SHOW_AI_CODING: 'False'
