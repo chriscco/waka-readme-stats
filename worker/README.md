@@ -110,7 +110,7 @@ Other dates continue to use local heartbeat calculations. No raw events are dele
 Original totals include AI Coding. Historical idle timeout and other source
 settings are retained, so they may differ from the local 15-minute estimate.
 The Insights days response lacks language/editor/project/OS details: their totals
-are explicitly grouped under `Historical detail unavailable`, never invented.
+are explicitly grouped under `History (no details)`, never invented.
 These imported totals feed the heatmap, daily, weekly and all-time endpoints.
 GitHub commit patterns and repository languages are separate GitHub-derived metrics.
 The checked profile imported 364 completed dates, 2025-11-06 through 2026-11-04;

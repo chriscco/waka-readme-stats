@@ -38,7 +38,7 @@ test('historical totals retain AI, exclude cutoff day, survive late heartbeats, 
   const result = await daily('2026-01-01', '2026-01-02');
   assert.deepEqual(result.map(x => x.total_seconds), [900, 300]);
   assert.equal(result[0].categories.find(x => x.name === 'AI Coding').total_seconds, 600);
-  assert.equal(result[0].languages[0].name, 'Historical detail unavailable');
+  assert.equal(result[0].languages[0].name, 'History (no details)');
   assert.equal((await (await request('stats/all_time')).json()).data.total_seconds, 1200);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM historical_summaries').first()).n, 1);
   const history = JSON.parse((await db.prepare('SELECT source FROM historical_summaries').first()).source);

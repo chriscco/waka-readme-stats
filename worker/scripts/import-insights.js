@@ -25,7 +25,7 @@ export function importStatements(document, before) {
     }
     if (Math.abs(Object.values(categories).reduce((a, b) => a + b, 0) - day.total) > 0.01) throw new Error('Category totals do not match daily total');
     if (day.date >= before) continue;
-    const unknown = day.total ? { 'Historical detail unavailable': day.total } : {};
+    const unknown = day.total ? { 'History (no details)': day.total } : {};
     const summary = { total_seconds: day.total, categories, languages: unknown, editors: unknown, projects: unknown, operating_systems: unknown };
     const source = { provider: 'wakatime-insights', ...metadata, day };
     statements.push(`INSERT INTO historical_summaries(day,summary,source) VALUES ('${day.date}',${quote(summary)},${quote(source)}) ON CONFLICT(day) DO UPDATE SET summary=excluded.summary,source=excluded.source;`);
