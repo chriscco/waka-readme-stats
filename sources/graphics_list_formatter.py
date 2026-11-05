@@ -50,7 +50,15 @@ def make_graph(percent: float):
     return f"{done_block * percent_quart}{empty_block * (25 - percent_quart)}"
 
 
-def make_list(data: List = None, names: List[str] = None, texts: List[str] = None, percents: List[float] = None, top_num: int = 5, sort: bool = True) -> str:
+def make_list(
+    data: List = None,
+    names: List[str] = None,
+    texts: List[str] = None,
+    percents: List[float] = None,
+    top_num: int = 5,
+    sort: bool = True,
+    counts: List[int] = None,
+) -> str:
     """
     Make list of text progress bars with supportive info.
     Each row has the following structure: [name of the measure] [quantity description (with words)] [progress bar] [total percentage].
@@ -65,12 +73,19 @@ def make_list(data: List = None, names: List[str] = None, texts: List[str] = Non
     :param percents: list of percents (total percentages), overloads data if defined.
     :param top_num: how many measures to display, default: 5.
     :param sort: if measures should be sorted by total percentage, default: True.
+    :param counts: absolute counts; scale to the next magnitude milestone and omit percentage labels.
     :returns: The string representation of the list.
     """
     if data is not None:
         names = [value for item in data for key, value in item.items() if key == "name"] if names is None else names
         texts = [value for item in data for key, value in item.items() if key == "text"] if texts is None else texts
         percents = [value for item in data for key, value in item.items() if key == "percent"] if percents is None else percents
+
+    if counts is not None:
+        maximum = max(counts, default=0)
+        step = 10 ** (len(str(maximum)) - 1)
+        limit = (maximum // step + 1) * step
+        percents = [count / limit * 100 for count in counts]
 
     data = list(zip(names, texts, percents))
     top_data = sorted(data[:top_num], key=lambda record: record[2], reverse=True) if sort else data[:top_num]
@@ -83,7 +98,7 @@ def make_list(data: List = None, names: List[str] = None, texts: List[str] = Non
         SVG_COL_BAR_X = 280
         SVG_BAR_WIDTH = 360
         SVG_COL_PCT_X = 648
-        SVG_VIEW_WIDTH = SVG_COL_PCT_X + 72  # 720: room for "100.00%" after the bar column
+        SVG_VIEW_WIDTH = SVG_COL_PCT_X + (72 if counts is None else 0)
         row_height = 24  # vertical pitch per data row
         height = 20 + (row_height * len(top_data))
         rows_svg = ""
@@ -100,12 +115,15 @@ def make_list(data: List = None, names: List[str] = None, texts: List[str] = Non
             rows_svg += f'<text x="{SVG_COL_TIME_X}" y="{y}" font-family="monospace" font-size="13" fill="{EM.TEXT_SECONDARY_COLOR}">{time_text}</text>'
             rows_svg += f'<rect x="{SVG_COL_BAR_X}" y="{y-10}" width="{SVG_BAR_WIDTH}" height="8" rx="{EM.BAR_RADIUS}" fill="{EM.BAR_TRACK_COLOR}"/>'
             rows_svg += f'<rect x="{SVG_COL_BAR_X}" y="{y-10}" width="{filled}" height="8" rx="{EM.BAR_RADIUS}" fill="{EM.BAR_COLOR}"/>'
-            rows_svg += f'<text x="{SVG_COL_PCT_X}" y="{y}" font-family="monospace" font-size="12" fill="{EM.TEXT_SECONDARY_COLOR}">{p:.2f}%</text>'
+            if counts is None:
+                rows_svg += f'<text x="{SVG_COL_PCT_X}" y="{y}" font-family="monospace" font-size="12" fill="{EM.TEXT_SECONDARY_COLOR}">{p:.2f}%</text>'
 
         return f'<svg width="{SVG_VIEW_WIDTH}" viewBox="0 0 {SVG_VIEW_WIDTH} {height}" xmlns="http://www.w3.org/2000/svg">{rows_svg}</svg>'
     else:
         # Text mode: existing format with fixed-width spacing
-        data_list = [f"{n[:25]}{' ' * (25 - len(n))}{t}{' ' * (20 - len(t))}{make_graph(p)}   {p:05.2f} % " for n, t, p in top_data]
+        data_list = [
+            f"{n[:25]}{' ' * (25 - len(n))}{t}{' ' * (20 - len(t))}{make_graph(p)}" + (f"   {p:05.2f} % " if counts is None else "") for n, t, p in top_data
+        ]
         return "\n".join(data_list)
 
 
@@ -130,29 +148,25 @@ async def make_commit_day_time_list(time_zone: str, repositories: Dict, commit_d
         day_times[date.hour // 6] += 1
         week_days[date.isoweekday() - 1] += 1
 
-    sum_day = sum(day_times)
-    sum_week = sum(week_days)
     day_times = day_times[1:] + day_times[:1]
 
     if EM.SHOW_COMMIT:
         dt_names = [f"{DAY_TIME_EMOJI[i]} {FM.t(DAY_TIME_NAMES[i])}" for i in range(len(day_times))]
         dt_texts = [f"{day_time} commits" for day_time in day_times]
-        dt_percents = [0 if sum_day == 0 else round((day_time / sum_day) * 100, 2) for day_time in day_times]
         title = FM.t("I am an Early") if sum(day_times[0:2]) >= sum(day_times[2:4]) else FM.t("I am a Night")
         if EM.BAR_STYLE == "svg":
-            stats += f"**{title}** \n\n{make_list(names=dt_names, texts=dt_texts, percents=dt_percents, top_num=7, sort=False)}\n"
+            stats += f"**{title}** \n\n{make_list(names=dt_names, texts=dt_texts, counts=day_times, top_num=7, sort=False)}\n"
         else:
-            stats += f"**{title}** \n\n```text\n{make_list(names=dt_names, texts=dt_texts, percents=dt_percents, top_num=7, sort=False)}\n```\n"
+            stats += f"**{title}** \n\n```text\n{make_list(names=dt_names, texts=dt_texts, counts=day_times, top_num=7, sort=False)}\n```\n"
 
     if EM.SHOW_DAYS_OF_WEEK:
         wd_names = [FM.t(week_day) for week_day in WEEK_DAY_NAMES]
         wd_texts = [f"{week_day} commits" for week_day in week_days]
-        wd_percents = [0 if sum_week == 0 else round((week_day / sum_week) * 100, 2) for week_day in week_days]
-        title = FM.t("I am Most Productive on") % wd_names[wd_percents.index(max(wd_percents))]
+        title = FM.t("I am Most Productive on") % wd_names[week_days.index(max(week_days))]
         if EM.BAR_STYLE == "svg":
-            stats += f"📅 **{title}** \n\n{make_list(names=wd_names, texts=wd_texts, percents=wd_percents, top_num=7, sort=False)}\n"
+            stats += f"📅 **{title}** \n\n{make_list(names=wd_names, texts=wd_texts, counts=week_days, top_num=7, sort=False)}\n"
         else:
-            stats += f"📅 **{title}** \n\n```text\n{make_list(names=wd_names, texts=wd_texts, percents=wd_percents, top_num=7, sort=False)}\n```\n"
+            stats += f"📅 **{title}** \n\n```text\n{make_list(names=wd_names, texts=wd_texts, counts=week_days, top_num=7, sort=False)}\n```\n"
 
     return stats
 
@@ -174,7 +188,7 @@ def make_language_per_repo_list(repositories: Dict) -> str:
 
     names = list(language_count.keys())
     texts = [f"{language_count[lang]['count']} {'repo' if language_count[lang]['count'] == 1 else 'repos'}" for lang in names]
-    percents = [round(language_count[lang]["count"] / len(repos_with_language) * 100, 2) for lang in names]
+    counts = [language_count[lang]["count"] for lang in names]
 
     if language_count:
         top_language = max(language_count.keys(), key=lambda x: language_count[x]["count"])
@@ -182,6 +196,6 @@ def make_language_per_repo_list(repositories: Dict) -> str:
     else:
         title = ""
     if EM.BAR_STYLE == "svg":
-        return f"{title}{make_list(names=names, texts=texts, percents=percents)}\n\n"
+        return f"{title}{make_list(names=names, texts=texts, counts=counts)}\n\n"
     else:
-        return f"{title}```text\n{make_list(names=names, texts=texts, percents=percents)}\n```\n\n"
+        return f"{title}```text\n{make_list(names=names, texts=texts, counts=counts)}\n```\n\n"

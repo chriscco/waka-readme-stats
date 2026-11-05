@@ -663,3 +663,12 @@ sync. Daily README updates reuse it and still deduplicate against current GitHub
 No local scheduler is installed. Snapshot mode takes precedence over direct Gitea mode.
 
 Gitea collection uses direct HTTPS connections. The manual Worker upload honors `https_proxy` / `HTTPS_PROXY`; it does not use `all_proxy`.
+
+### Count-based commit and repository bars
+
+Commit time-of-day, weekday, and repository-language bars use absolute counts and
+omit percentage labels. Each group has its own full-scale milestone: take the
+largest count's leading place value, then advance to the next multiple
+(e.g. 26 → 30, 680 → 700, 1,269 → 2,000, 2,000 → 3,000). Empty groups use a scale
+of 1. Text and SVG bars follow the same rule; coding-time language and editor
+statistics keep their existing percentage bars.
