@@ -3,7 +3,7 @@
 This single-user service collects existing WakaTime clients' heartbeats and keeps
 them in your Cloudflare D1 database. It returns coding time, language/editor/project
 shares and a private annual SVG heatmap. It retains supplied AI metadata but does
-not generate AI reports or import WakaTime history.
+not generate AI reports. An offline importer can preserve historical Insights daily totals.
 
 ## Local development
 
@@ -87,6 +87,34 @@ The API stays private; the Action downloads the SVG and commits its rendered
 365-day totals to the public README assets. The SVG has a transparent background
 and adapts its labels and green palette to the viewer’s light/dark color scheme. Only enable this if you want those
 daily totals public.
+
+## Import historical Insights totals
+
+The offline importer accepts a saved, up-to-date `insights/days` JSON response in
+Asia/Shanghai. It validates every date, category and total before emitting SQL.
+Keep both the response and generated SQL outside this repository in a private directory.
+Apply migrations and back up D1 before importing:
+
+```sh
+node scripts/import-insights.js /private/insights.json 2026-11-05 > /private/import.sql
+npx wrangler d1 execute wakatime --remote --file=/private/import.sql
+```
+
+The cutoff is exclusive: this example imports through November 4. Never import
+an unfinished current date. `historical_summaries` stores the original daily
+record and calculation metadata separately from heartbeats. Repeating an import
+updates the same dates without duplication. On an imported date the historical
+summary takes precedence over local events, including later client backfills.
+Other dates continue to use local heartbeat calculations. No raw events are deleted.
+
+Original totals include AI Coding. Historical idle timeout and other source
+settings are retained, so they may differ from the local 15-minute estimate.
+The Insights days response lacks language/editor/project/OS details: their totals
+are explicitly grouped under `Historical detail unavailable`, never invented.
+These imported totals feed the heatmap, daily, weekly and all-time endpoints.
+GitHub commit patterns and repository languages are separate GitHub-derived metrics.
+The checked profile imported 364 completed dates, 2025-11-06 through 2026-11-04;
+the `all_time` Insights endpoint required an upgrade on that account.
 
 ## HTTP contract
 

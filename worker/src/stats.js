@@ -57,7 +57,7 @@ export function aggregate(events, day) {
 }
 
 export async function summaries(db, start, end) {
-  const dirty = await db.prepare('SELECT day, version FROM daily_summaries WHERE day BETWEEN ? AND ? AND computed_version != version ORDER BY day LIMIT 16').bind(start, end).all();
+  const dirty = await db.prepare('SELECT day, version FROM daily_summaries WHERE day BETWEEN ? AND ? AND computed_version != version AND day NOT IN (SELECT day FROM historical_summaries) ORDER BY day LIMIT 16').bind(start, end).all();
   for (const row of dirty.results) {
     const beginning = midnight(row.day);
     const events = await db.prepare('SELECT id,time,machine,type,category,language,editor,project,operating_system FROM heartbeats WHERE time BETWEEN ? AND ? ORDER BY time,id')
@@ -67,7 +67,11 @@ export async function summaries(db, start, end) {
       .bind(JSON.stringify(summary), row.version, row.day, row.version).run();
   }
   // One snapshot checks readiness and reads caches, so late writes cannot hide behind stale totals.
-  const rows = await db.prepare('SELECT day,version,computed_version,summary FROM daily_summaries WHERE day BETWEEN ? AND ? ORDER BY day').bind(start, end).all();
+  // Imported dates replace local estimates; late client retries must not count a day twice.
+  const rows = await db.prepare(`SELECT day,version,computed_version,summary FROM daily_summaries
+    WHERE day BETWEEN ?1 AND ?2 AND day NOT IN (SELECT day FROM historical_summaries)
+    UNION ALL SELECT day,0 AS version,0 AS computed_version,summary FROM historical_summaries
+    WHERE day BETWEEN ?1 AND ?2 ORDER BY day`).bind(start, end).all();
   if (rows.results.some(row => row.version !== row.computed_version || !row.summary)) throw new HttpError(503, 'Daily summaries are updating; retry this request');
   return new Map(rows.results.map(row => [row.day, JSON.parse(row.summary)]));
 }

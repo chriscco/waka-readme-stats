@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { summaries } from '../src/stats.js';
+import { importStatements } from '../scripts/import-insights.js';
 
 const key = '00000000-0000-4000-8000-000000000001';
 const base = 'https://stats.test/api/v1/users/current/';
@@ -12,9 +13,10 @@ before(async () => {
     d1Databases: ['DB'], bindings: { INGEST_KEY: key } }));
   db = await mf.getD1Database('DB');
   await db.exec((await readFile('migrations/0001.sql', 'utf8')).replaceAll('\n', ' '));
+  await db.exec((await readFile('migrations/0002.sql', 'utf8')).replaceAll('\n', ' '));
 });
 after(async () => { await mf?.dispose(); });
-beforeEach(async () => { await db.batch([db.prepare('DELETE FROM heartbeats'), db.prepare('DELETE FROM daily_summaries')]); });
+beforeEach(async () => { await db.batch([db.prepare('DELETE FROM heartbeats'), db.prepare('DELETE FROM daily_summaries'), db.prepare('DELETE FROM historical_summaries')]); });
 function request(path, { auth = `Bearer ${key}`, ...options } = {}) {
   return mf.dispatchFetch(base + path, { ...options, headers: { Authorization: auth, ...options.headers } });
 }
@@ -25,6 +27,33 @@ function heartbeat(at, fields = {}) {
 function upload(events, options = {}) {
   return request('heartbeats.bulk', { method: 'POST', body: JSON.stringify(events), ...options });
 }
+function insights() {
+  return { data: { timezone: 'Asia/Shanghai', is_up_to_date: true, percent_calculated: 100, timeout: 30,
+    days: [1, 2].map(n => ({ date: `2026-01-0${n}`, total: 900, categories: [{ name: 'Coding', total: 300 }, { name: 'AI Coding', total: 600 }] })) } };
+}
+test('historical totals retain AI, exclude cutoff day, survive late heartbeats, and import idempotently', async () => {
+  const statements = importStatements(insights(), '2026-01-02');
+  for (let i = 0; i < 2; i++) await db.batch(statements.map(sql => db.prepare(sql)));
+  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:05:00'), heartbeat('02T10:00:00'), heartbeat('02T10:05:00')]);
+  const result = await daily('2026-01-01', '2026-01-02');
+  assert.deepEqual(result.map(x => x.total_seconds), [900, 300]);
+  assert.equal(result[0].categories.find(x => x.name === 'AI Coding').total_seconds, 600);
+  assert.equal(result[0].languages[0].name, 'Historical detail unavailable');
+  assert.equal((await (await request('stats/all_time')).json()).data.total_seconds, 1200);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM historical_summaries').first()).n, 1);
+  const history = JSON.parse((await db.prepare('SELECT source FROM historical_summaries').first()).source);
+  assert.equal(history.timeout, 30);
+});
+test('history import rejects stale, incomplete, invalid, duplicate or mismatched records before emitting SQL', () => {
+  for (const modify of [
+    d => { d.data.timezone = 'UTC'; }, d => { d.data.is_up_to_date = false; },
+    d => { d.data.percent_calculated = 50; }, d => { d.data.days[0].total = -1; },
+    d => { d.data.days[0].date = '2026-02-30'; }, d => { d.data.days.push(d.data.days[0]); },
+    d => { d.data.days[0].categories[0].total = 999; }, d => { d.data.days[0].total = Infinity; },
+    d => { d.data.days[0].categories[0].total = '300'; },
+  ]) { const data = insights(); modify(data); assert.throws(() => importStatements(data, '2026-01-02')); }
+  assert.throws(() => importStatements(insights(), '2999-01-01'));
+});
 async function daily(start = '2026-01-01', end = start) {
   const response = await request(`daily?start=${start}&end=${end}`);
   assert.equal(response.status, 200, await response.clone().text());
