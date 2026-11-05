@@ -133,6 +133,30 @@ If you want to add the other info to your stats, you can add multiple `FLAGS` in
 
 ---
 
+### Personal Workers + D1 backend
+
+To store your own coding history while keeping the existing WakaTime plugins,
+see [the personal Worker setup guide](worker/README.md). It supports dual delivery
+to WakaTime and your Worker, private statistics, and an annual green activity SVG.
+The Worker currently reports coding time; AI metadata is retained but AI reports
+are not implemented.
+
+Set `WAKATIME_API_URL` to your Worker's `/api/v1/` URL and `WAKATIME_API_KEY`
+to its personal ingestion key **in the README workflow**. These settings are
+separate from your editor's `~/.wakatime.cfg`, which can retain WakaTime as its
+default destination. Enable `SHOW_CODING_HEATMAP: "True"` for the annual SVG
+(default `False`), and disable `SHOW_AI_CODE_TIME` and `SHOW_AI_CODING` when
+reading the personal backend.
+
+Use [the example profile workflow](examples/profile-worker.yml) to run this source
+code. The existing `action.yml` uses an upstream Docker image, so changing only
+the Action's repository reference does **not** run a locally modified generator.
+
+The example saves the SVG to your profile repository. Visitors never need your
+Worker key, and the last successfully generated image survives backend downtime.
+
+### Display options
+
 `LOCALE`  This flag can be used to show stats in your language. Default is English. Locale [Short Hand](https://saimana.com/list-of-country-locale-code/) to be passed in the flag variable. Example of the final result can be found [here](https://github.com/anmol098/anmol098/blob/master/Readme-fr.md)
 
 The `SECTION_NAME` flag can be set to any string, and will be the name of the section to replace in the README.

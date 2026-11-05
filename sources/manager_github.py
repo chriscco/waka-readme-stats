@@ -185,8 +185,9 @@ class GitHubManager:
         else:
             DBM.i("\tInlining chart...")
             hint = "You can use [this website](https://codebeautify.org/base64-to-image-converter) to view the generated base64 image."
+            content_type = "image/svg+xml" if path.endswith(".svg") else "image/png"
             with open(path, "rb") as input_file:
-                output += f"{hint}\n```\ndata:image/png;base64,{b64encode(input_file.read()).decode('utf-8')}\n```\n\n"
+                output += f"{hint}\n```\ndata:{content_type};base64,{b64encode(input_file.read()).decode('utf-8')}\n```\n\n"
         return output
 
     @staticmethod

@@ -326,6 +326,11 @@ async def get_stats() -> str:
                         f"{quote(str(ai_category['text']))}-blue?style={quote(EM.BADGE_STYLE)})\n\n"
                     )
 
+    if EM.SHOW_CODING_HEATMAP:
+        heatmap = await DM.get_coding_heatmap()
+        FM.write_file("coding-heatmap.svg", heatmap, assets=True)
+        stats += f"**Coding Activity**\n\n{GHM.update_chart('Coding Activity', f'{FM.ASSETS_DIR}/coding-heatmap.svg')}"
+
     if EM.SHOW_PROFILE_VIEWS:
         if EM.DEBUG_RUN or GHM.REMOTE is None:
             DBM.w("Profile views skipped in DEBUG_RUN mode.")

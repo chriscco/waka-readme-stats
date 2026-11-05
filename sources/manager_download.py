@@ -5,6 +5,7 @@ from hashlib import md5
 from os.path import join
 from string import Template
 from typing import Any, Callable, Optional, List, Tuple
+from xml.etree.ElementTree import fromstring, ParseError
 
 from httpx import AsyncClient
 from yaml import safe_load
@@ -230,7 +231,8 @@ class DownloadManager:
             DBM.w(f"\tQuery '{resource}' returned 202 status code")
             return None
         else:
-            raise Exception(f"Query '{res.url}' failed to run by returning code of {res.status_code}: {res.json()}")
+            # URLs and server error bodies can contain the private WakaTime/Worker key.
+            raise RuntimeError(f"Query '{resource}' failed (HTTP {res.status_code})")
 
     @staticmethod
     async def get_remote_json(resource: str) -> Optional[dict]:
@@ -249,6 +251,28 @@ class DownloadManager:
         :return: Response YAML dictionary.
         """
         return await DownloadManager._get_remote_resource(resource, safe_load)
+
+    @staticmethod
+    async def get_coding_heatmap() -> str:
+        """Fetch the private Worker SVG; reject failures before replacing the existing chart."""
+        if EM.MOCK_WAKATIME:
+            with open(join(EM.MOCK_DATA_DIR, "mock_coding_heatmap.svg"), encoding="utf-8") as fixture:
+                return fixture.read()
+
+        response = await DownloadManager._client.get(
+            f"{EM.WAKATIME_API_URL}users/current/heatmap.svg",
+            headers={"Authorization": f"Bearer {EM.WAKATIME_API_KEY}"},
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"Coding heatmap unavailable (HTTP {response.status_code})")
+        if len(response.content) > 1_000_000:
+            raise RuntimeError("Coding heatmap SVG exceeds size limit")
+        try:
+            if fromstring(response.content).tag != "{http://www.w3.org/2000/svg}svg":
+                raise ValueError("Not SVG")
+            return response.content.decode("utf-8")
+        except (ParseError, ValueError) as error:
+            raise RuntimeError("Coding heatmap response is not valid UTF-8 SVG") from error
 
     @staticmethod
     async def _fetch_graphql_query(query: str, retries_count: int = 10, **kwargs) -> dict:

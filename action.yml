@@ -112,6 +112,11 @@ inputs:
     description: "Show the all-time AI Code Time badge"
     default: "True"
 
+  SHOW_CODING_HEATMAP:
+    required: false
+    description: "Show the annual coding activity SVG from the personal Worker backend"
+    default: "False"
+
   SHOW_AI_CODING:
     required: false
     description: "Show the weekly AI coding breakdown (AI vs human lines, cost, model breakdown, sessions)"
