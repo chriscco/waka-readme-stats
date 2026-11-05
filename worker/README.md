@@ -84,7 +84,8 @@ For the README generator, set `WAKATIME_API_URL` to the Worker base ending in
 [profile workflow example](../examples/profile-worker.yml); it runs your changed
 code. Existing upstream prebuilt Action images will not contain this integration.
 The API stays private; the Action downloads the SVG and commits its rendered
-365-day totals to the public README assets. Only enable this if you want those
+365-day totals to the public README assets. The SVG has a transparent background
+and adapts its labels and green palette to the viewer’s light/dark color scheme. Only enable this if you want those
 daily totals public.
 
 ## HTTP contract
