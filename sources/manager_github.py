@@ -1,4 +1,5 @@
 from base64 import b64encode
+from hashlib import sha256
 from os import environ, makedirs
 from os.path import dirname, join
 from random import choice
@@ -180,6 +181,8 @@ class GitHubManager:
             DBM.i("\tAdding chart to repo...")
             GitHubManager._copy_file_and_add_to_repo(path)
             chart_path = f"https://raw.githubusercontent.com/{GitHubManager._REMOTE_NAME}/{GitHubManager.branch(EM.PUSH_BRANCH_NAME)}/{path}"
+            with open(path, "rb") as chart_file:
+                chart_path += f"?v={sha256(chart_file.read()).hexdigest()[:12]}"
             output += f"![{name} chart]({chart_path})\n\n"
 
         else:

@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import chdir
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -126,6 +127,21 @@ class HeatmapReadmeTests(unittest.IsolatedAsyncioTestCase):
         image = Path(self.temp.name) / "test.png"
         image.write_bytes(b"png fixture")
         self.assertIn("data:image/png;base64,", GHM.update_chart("Test", str(image)))
+
+    def test_public_chart_url_changes_with_content_but_is_stable_when_unchanged(self):
+        with chdir(self.temp.name), Repo.init("profile") as repo:
+            Path("assets").mkdir()
+            image = Path("assets/coding-heatmap.svg")
+            image.write_text(SVG)
+            remote = SimpleNamespace(default_branch="main")
+            with patch.multiple(GHM, REPO=repo, REMOTE=remote, _REMOTE_NAME="example/example", create=True), patch.object(EM, "DEBUG_RUN", False):
+                first = GHM.update_chart("Coding Activity", str(image))
+                self.assertIn(f"?v={sha256(image.read_bytes()).hexdigest()[:12]}", first)
+                self.assertEqual(first, GHM.update_chart("Coding Activity", str(image)))
+                image.write_text(SVG.replace("Coding activity", "Updated activity"))
+                updated = GHM.update_chart("Coding Activity", str(image))
+                self.assertNotEqual(first, updated)
+                self.assertEqual(Path("profile/assets/coding-heatmap.svg").read_bytes(), image.read_bytes())
 
 
 if __name__ == "__main__":
