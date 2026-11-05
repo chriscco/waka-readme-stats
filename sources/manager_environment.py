@@ -25,6 +25,8 @@ class EnvironmentManager:
 
     # stats for the author or the one with the token
     GH_USER = getenv("INPUT_GH_USER", "").strip()
+    GITEA_API_URL = getenv("INPUT_GITEA_API_URL", "").strip()
+    GITEA_API_TOKEN = (getenv("INPUT_GITEA_API_TOKEN") or getenv("gitea", "")).strip()
     WAKATIME_API_KEY = getenv("INPUT_WAKATIME_API_KEY", "")
     WAKATIME_API_URL = getenv("INPUT_WAKATIME_API_URL", "https://wakatime.com/api/v1/")
     if not WAKATIME_API_URL.endswith("/"):

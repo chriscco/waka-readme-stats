@@ -16,6 +16,7 @@ from manager_file import init_localization_manager, FileManager as FM
 from manager_debug import init_debug_manager, DebugManager as DBM
 from graphics_chart_drawer import create_loc_graph, GRAPH_PATH
 from yearly_commit_calculator import calculate_commit_data
+from gitea_commits import get_gitea_commit_dates
 from graphics_list_formatter import (
     make_list,
     make_commit_day_time_list,
@@ -141,7 +142,14 @@ async def get_waka_time_stats(repositories: Dict, commit_dates: Dict) -> str:
         return stats
     if EM.SHOW_COMMIT or EM.SHOW_DAYS_OF_WEEK:  # if any on flag is turned on then we need to calculate the data and print accordingly
         DBM.i("Adding user commit day time info...")
-        stats += f"{await make_commit_day_time_list(data['data']['timezone'], repositories, commit_dates)}\n\n"
+        extra_dates = []
+        if EM.GITEA_API_URL:
+            DBM.i("Collecting Gitea commit dates...")
+            gitea_commits = await get_gitea_commit_dates(EM.GITEA_API_URL, EM.GITEA_API_TOKEN)
+            github_shas = {sha for repo in repositories for branch in commit_dates.get(repo["name"], {}).values() for sha in branch}
+            extra_dates = [date for sha, date in gitea_commits.items() if sha not in github_shas]
+            DBM.i(f"Adding {len(extra_dates)} unique Gitea commits to time and weekday distributions.")
+        stats += f"{await make_commit_day_time_list(data['data']['timezone'], repositories, commit_dates, extra_dates)}\n\n"
 
     if EM.SHOW_TIMEZONE or EM.SHOW_LANGUAGE or EM.SHOW_EDITORS or EM.SHOW_PROJECTS or EM.SHOW_OS:
         no_activity = FM.t("No Activity Tracked This Week")

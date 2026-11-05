@@ -22,6 +22,16 @@ inputs:
     required: false
     default: "https://wakatime.com/api/v1/"
 
+  GITEA_API_URL:
+    description: 'Optional Gitea instance URL for adding your commits to time and weekday distributions'
+    required: false
+    default: ""
+
+  GITEA_API_TOKEN:
+    description: 'Gitea token with read access to your account, email addresses, repositories and commits'
+    required: false
+    default: ""
+
   SECTION_NAME:
     description: 'Name used in readme to scope the updated section'
     required: false

@@ -615,3 +615,26 @@ Made with :heart: and Python 🐍.
 ## Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/anmol098/waka-readme-stats.svg)](https://starchart.cc/anmol098/waka-readme-stats)
+
+### Optional Gitea commit distributions
+
+Set `INPUT_GITEA_API_URL` to your HTTPS Gitea instance URL and
+`INPUT_GITEA_API_TOKEN` to a repository secret when running the source-based profile
+workflow. Local runs can use the existing `gitea` environment variable for the token.
+An unset API URL disables this feature. The upstream prebuilt Docker image does
+not include this fork's additions; use the source-based workflow example.
+
+Only the authenticated user's authored commits are added to the time-of-day and
+weekday counters, using each commit's committer timestamp in the WakaTime timezone.
+Identity matches the account ID or a verified author email. All accessible nonempty
+repositories' current branches are scanned with pagination. Duplicate SHAs across
+Gitea branches/repos and SHAs already counted by GitHub are counted only once as
+additional commits. Existing GitHub counting behavior is preserved.
+
+The collector disables diff stats, changed-file lists and signature verification.
+The collector returns only commit IDs and dates; README output contains aggregate
+counts, with no Gitea repository names, messages, emails or file details. Gitea
+is not included in repository language counts, code time or the coding heatmap.
+Request failures fail the update rather than publishing incomplete counts. Deleted
+repositories/branches and history unavailable to the token cannot be reconstructed.
+The runner must be able to reach the instance. Full history scans can take minutes.
