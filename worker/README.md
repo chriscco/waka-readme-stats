@@ -108,7 +108,7 @@ summary takes precedence over local events, including later client backfills.
 Other dates continue to use local heartbeat calculations. No raw events are deleted.
 
 Original totals include AI Coding. Historical idle timeout and other source
-settings are retained, so they may differ from the local 15-minute estimate.
+settings are retained, so they may differ from the local 30-minute estimate.
 The Insights days response lacks language/editor/project/OS details: their totals
 are explicitly grouped under `History (no details)`, never invented.
 These imported totals feed the heatmap, daily, weekly and all-time endpoints.
@@ -167,10 +167,11 @@ project names and AI metadata; restrict D1/account access accordingly.
 
 Dates use fixed UTC+08:00 (`Asia/Shanghai`), without historical DST rules.
 For each machine, events are ordered by timestamp and then their stable ID.
-`type: "app"` with category `ai coding` is excluded before pairing because these
-events represent background thinking. Other supplied AI file events remain
-eligible. Each pair contributes the gap only when it is positive and at most
-15 minutes; the interval inherits the earlier event's dimensions. Isolated events,
+The client's monitored-app settings and editor plugins determine which events
+are sent; the Worker adds no application allowlist or AI-app exclusion.
+All reported activity, including background AI app events, is eligible.
+Each pair contributes the gap only when it is positive and at most
+30 minutes; the interval inherits the earlier event's dimensions. Isolated events,
 long idle gaps and time after the final heartbeat contribute no duration. This is
 an explicit estimate and need not exactly match WakaTime's proprietary totals.
 
@@ -180,10 +181,10 @@ the lexicographically greatest event ID breaking equal-start ties. Thus duration
 and every dimension's shares count a wall-clock instant at most once. A sweep
 keeps only active machine intervals; it does not compare every pair of events.
 
-An SQL insert trigger increments the versions of dates touched by `time ± 900s`
+An SQL insert trigger increments the versions of dates touched by `time ± 1800s`
 in the same transaction as the heartbeat. This covers adjacent dates when a late
 event bridges midnight. Ignored duplicates do not invalidate anything. Reads
-rebuild only dirty dates using the time index and a 15-minute margin on either
+rebuild only dirty dates using the time index and a 30-minute margin on either
 side, then publish only if the date's version still matches. The final query reads
 cache contents and readiness together; concurrent late writes cannot publish an
 outdated cache as current.
@@ -255,3 +256,50 @@ The sync command resends queued real heartbeats without creating a test heartbea
 Keep the configured proxy running; otherwise uploads queue offline again. Verify
 actual receipt using D1's `heartbeats` count and latest `time`, not the imported
 historical summaries or Gitea snapshot.
+
+
+## Seven-day raw heartbeat retention
+
+A daily Cron Trigger at 02:00 Asia/Shanghai (18:00 UTC) archives dates older than
+seven completed local days. It retains today, the preceding seven dates, and a
+30-minute boundary margin for midnight calculations. Daily totals and all supplied
+language/editor/project/OS/category shares remain in `historical_summaries`.
+Imported Insights rows keep their original totals and provenance.
+
+Archiving checks that each cache version is current. Archive inserts and raw
+heartbeat deletion share one transaction; records are removed only when both
+potentially affected dates have archived summaries. A failed or raced calculation
+keeps raw data for a later run. Each run deletes at most 5,000 heartbeats, so a large
+backlog drains over multiple days. Summary rebuilding still handles up to 16 dirty
+dates per request/run.
+
+Archived dates are frozen. Late heartbeats may be received but cannot revise those
+summaries. Changing calculation rules after raw data has expired cannot reconstruct
+old activity. Retained raw data preserves supplied AI fields; daily archives keep
+only the existing aggregate dimensions, not individual AI metadata.
+
+## Free-tier sizing (2026-11-06)
+
+Observed 1,774 heartbeats for November 6 at the time of sampling. Budgeting
+2,000–3,000/day, normal ingestion needs at most roughly 2,000–3,000 Worker requests
+without batching, plus the README fetches and client status calls. Retries are extra.
+The 30-minute idle threshold is an aggregation rule, not an upload schedule.
+
+Including heartbeat rows, indexes, summary invalidation and eventual deletion,
+allow roughly 10,000–25,000 D1 row writes/day. The cached daily README workflow
+should stay well below 100,000 row reads/day at this scale. These are estimates,
+not account-wide billing measurements. The public README serves the generated SVG
+from GitHub, so profile visits do not query this Worker.
+
+Measured raw fields average about 0.7 KB/heartbeat, before indexes/page overhead.
+Allowing roughly 1–1.5 KB/heartbeat, the retention window should occupy around
+20–40 MB plus growing daily summaries. No automatic deletion of daily summaries.
+
+Current official limits: [Workers Free](https://developers.cloudflare.com/workers/platform/limits/)
+100,000 requests/day and 10 ms CPU/invocation;
+[D1 Free pricing](https://developers.cloudflare.com/d1/platform/pricing/)
+5 million rows read/day and 100,000 rows written/day;
+[D1 limits](https://developers.cloudflare.com/d1/platform/limits/) 500 MB/database
+and 5 GB/account. Limits are shared with other workloads on the account where
+applicable. CPU headroom is not a throughput guarantee and needs production metrics
+if activity grows substantially. Routine data volume fits Free with retention.

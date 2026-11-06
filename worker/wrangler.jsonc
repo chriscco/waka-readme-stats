@@ -9,5 +9,6 @@
     "database_id": "aa4f9d91-57bd-4dfb-bc9f-1060171a97e9",
     "migrations_dir": "migrations"
   }],
+  "triggers": { "crons": ["0 18 * * *"] },
   "observability": { "enabled": false }
 }

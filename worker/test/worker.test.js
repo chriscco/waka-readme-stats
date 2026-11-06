@@ -2,8 +2,9 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
-import { summaries } from '../src/stats.js';
+import { summaries, retainRecentHeartbeats } from '../src/stats.js';
 import { importStatements } from '../scripts/import-insights.js';
+import worker from '../src/index.js';
 
 const key = '00000000-0000-4000-8000-000000000001';
 const base = 'https://stats.test/api/v1/users/current/';
@@ -15,6 +16,7 @@ before(async () => {
   await db.exec((await readFile('migrations/0001.sql', 'utf8')).replaceAll('\n', ' '));
   await db.exec((await readFile('migrations/0002.sql', 'utf8')).replaceAll('\n', ' '));
   await db.exec((await readFile('migrations/0003.sql', 'utf8')).replaceAll('\n', ' '));
+  await db.exec((await readFile('migrations/0004.sql', 'utf8')).replaceAll('\n', ' '));
 });
 after(async () => { await mf?.dispose(); });
 beforeEach(async () => { await db.batch([db.prepare('DELETE FROM heartbeats'), db.prepare('DELETE FROM daily_summaries'), db.prepare('DELETE FROM historical_summaries'), db.prepare('DELETE FROM gitea_snapshot')]); });
@@ -114,13 +116,13 @@ test('idle gaps and isolated events add nothing; events can arrive out of order'
 });
 
 test('midnight splitting and late events invalidate both sides while unrelated dates stay cached', async () => {
-  await upload([heartbeat('01T23:58:00'), heartbeat('03T10:00:00')]);
+  await upload([heartbeat('01T23:55:00'), heartbeat('03T10:00:00')]);
   assert.deepEqual((await daily('2026-01-01', '2026-01-03')).map(d => d.total_seconds), [0, 0, 0]);
-  await upload([heartbeat('02T00:02:00')]);
+  await upload([heartbeat('02T00:20:00')]);
   const cached = await db.prepare('SELECT day, version, computed_version FROM daily_summaries ORDER BY day').all();
   assert.ok(cached.results.find(d => d.day === '2026-01-01').version > cached.results.find(d => d.day === '2026-01-01').computed_version);
   assert.equal(cached.results.find(d => d.day === '2026-01-03').version, cached.results.find(d => d.day === '2026-01-03').computed_version);
-  assert.deepEqual((await daily('2026-01-01', '2026-01-03')).map(d => d.total_seconds), [120, 120, 0]);
+  assert.deepEqual((await daily('2026-01-01', '2026-01-03')).map(d => d.total_seconds), [300, 1200, 0]);
 });
 
 test('overlapping machines count once and newest interval wins attribution', async () => {
@@ -132,16 +134,17 @@ test('overlapping machines count once and newest interval wins attribution', asy
   assert.equal(result.languages.find(x => x.name === 'Rust').total_seconds, 600);
 });
 
-test('per-event user agent overrides headers; preserve AI metadata and exclude app thinking', async () => {
+test('per-event user agent overrides headers; preserve AI metadata and count client-reported app activity', async () => {
   const agent = 'wakatime/v2.0.0 (darwin-24.0.0-arm64) go1.25.0 vscode/1.99.0 vscode-wakatime/25.0.0';
   await upload([heartbeat('01T10:00:00', { user_agent: agent }), heartbeat('01T10:05:00', { user_agent: agent }),
     heartbeat('01T11:00:00', { type: 'app', category: 'ai coding', ai_input_tokens: 123, ai_model: 'model-x', ai_session: 'abc', user_agent: 'wakatime/v2 (linux-unknown) go1.25 Claude/2.0 claude-opus-4-6/high' }),
     heartbeat('01T11:10:00', { type: 'app', category: 'ai coding' })],
   { headers: { 'User-Agent': 'wrong/1.0', 'X-Machine-Name': 'my%2Blaptop' } });
   const result = (await daily())[0];
-  assert.equal(result.total_seconds, 300);
-  assert.equal(result.editors[0].name, 'VS Code');
-  assert.equal(result.operating_systems[0].name, 'Mac');
+  assert.equal(result.total_seconds, 900);
+  assert.equal(result.categories.find(x => x.name === 'AI Coding').total_seconds, 600);
+  assert.equal(result.editors.find(x => x.name === 'VS Code').total_seconds, 300);
+  assert.equal(result.operating_systems.find(x => x.name === 'Mac').total_seconds, 300);
   const raw = await db.prepare("SELECT machine, payload FROM heartbeats WHERE category='ai coding' AND payload LIKE '%123%'").first();
   assert.equal(raw.machine, 'my+laptop');
   assert.equal(JSON.parse(raw.payload).ai_input_tokens, 123);
@@ -150,12 +153,12 @@ test('per-event user agent overrides headers; preserve AI metadata and exclude a
 });
 
 test('late insertion can remove a gap and changes cached attribution', async () => {
-  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:20:00')]);
+  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:40:00')]);
   assert.equal((await daily())[0].total_seconds, 0);
-  await upload([heartbeat('01T10:10:00', { language: 'Rust' })]);
+  await upload([heartbeat('01T10:20:00', { language: 'Rust' })]);
   const result = (await daily())[0];
-  assert.equal(result.total_seconds, 1200);
-  assert.deepEqual(result.languages.map(x => x.total_seconds), [600, 600]);
+  assert.equal(result.total_seconds, 2400);
+  assert.deepEqual(result.languages.map(x => x.total_seconds), [1200, 1200]);
 });
 
 test('stats match README fields, seven completed dates; today status matches CLI shape', async () => {
@@ -267,4 +270,80 @@ test('Gitea snapshot requires auth, replaces atomically, and cannot alter coding
     assert.deepEqual((await (await request('gitea/commits')).json()).data, replacement);
   } finally { await db.exec('DROP TRIGGER reject_snapshot'); }
 
+});
+
+
+test('30-minute idle boundary is inclusive; longer gaps remain idle', async () => {
+  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:30:00'), heartbeat('01T11:00:01')]);
+  assert.equal((await daily())[0].total_seconds, 1800);
+});
+
+test('overlapping AI app and editor intervals count wall-clock time once', async () => {
+  await upload([heartbeat('01T10:00:00', { type: 'app', category: 'ai coding' }), heartbeat('01T10:30:00', { type: 'app', category: 'ai coding' })], { headers: { 'X-Machine-Name': 'ai' } });
+  await upload([heartbeat('01T10:10:00'), heartbeat('01T10:20:00')], { headers: { 'X-Machine-Name': 'editor' } });
+  const result = (await daily())[0];
+  assert.equal(result.total_seconds, 1800);
+  assert.equal(result.categories.find(x => x.name === 'AI Coding').total_seconds, 1200);
+});
+
+
+test('policy migration invalidates computed caches without changing imported history', async () => {
+  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:20:00')]);
+  await daily();
+  await db.batch(importStatements(insights(), '2026-01-02').map(sql => db.prepare(sql)));
+  const history = await db.prepare('SELECT * FROM historical_summaries').first();
+  await db.exec((await readFile('migrations/0004.sql', 'utf8')).replaceAll('\n', ' '));
+  const cache = await db.prepare('SELECT version, computed_version FROM daily_summaries').first();
+  assert.ok(cache.version > cache.computed_version);
+  assert.deepEqual(await db.prepare('SELECT * FROM historical_summaries').first(), history);
+});
+
+
+test('retention freezes full daily summaries before deleting raw events and preserves midnight context', async () => {
+  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:20:00'), heartbeat('02T23:50:00'), heartbeat('03T00:10:00')]);
+  const original = await daily('2026-01-01', '2026-01-03');
+  await worker.scheduled({ scheduledTime: Date.parse('2026-01-10T02:00:00+08:00') }, { DB: db });
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM heartbeats').first()).n, 2);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM historical_summaries').first()).n, 2);
+  assert.deepEqual(await daily('2026-01-01', '2026-01-03'), original);
+  await upload([heartbeat('01T10:10:00', { language: 'Rust' })]);
+  await retainRecentHeartbeats(db, '2026-01-10');
+  assert.deepEqual(await daily('2026-01-01', '2026-01-03'), original);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM heartbeats').first()).n, 2);
+  await retainRecentHeartbeats(db, '2026-01-11');
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM heartbeats').first()).n, 0);
+  assert.deepEqual(await daily('2026-01-01', '2026-01-03'), original);
+});
+
+test('retention keeps Insights imports unchanged and never deletes events if archive writes fail', async () => {
+  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:20:00')]);
+  await db.exec("CREATE TRIGGER reject_archive BEFORE INSERT ON historical_summaries BEGIN SELECT RAISE(ABORT, 'archive failure'); END;");
+  try {
+    await assert.rejects(retainRecentHeartbeats(db, '2026-01-10'));
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM heartbeats').first()).n, 2);
+  } finally { await db.exec('DROP TRIGGER reject_archive'); }
+  await db.batch(importStatements(insights(), '2026-01-02').map(sql => db.prepare(sql)));
+  const original = await db.prepare('SELECT * FROM historical_summaries').first();
+  await retainRecentHeartbeats(db, '2026-01-10');
+  assert.deepEqual(await db.prepare('SELECT * FROM historical_summaries').first(), original);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM heartbeats').first()).n, 0);
+});
+
+test('retention skips a day dirtied between calculation and archiving', async () => {
+  await upload([heartbeat('01T10:00:00'), heartbeat('01T10:20:00')]);
+  const interleavedDB = {
+    prepare: sql => db.prepare(sql),
+    async batch(statements) {
+      await upload([heartbeat('01T10:10:00', { language: 'Rust' })]);
+      return db.batch(statements);
+    },
+  };
+  await retainRecentHeartbeats(interleavedDB, '2026-01-10');
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM heartbeats').first()).n, 3);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM historical_summaries').first()).n, 0);
+  await retainRecentHeartbeats(db, '2026-01-10');
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM heartbeats').first()).n, 0);
+  const result = (await daily())[0];
+  assert.equal(result.total_seconds, 1200);
+  assert.equal(result.languages.find(x => x.name === 'Rust').total_seconds, 600);
 });

@@ -1,5 +1,5 @@
 import { authorized, bodyJSON, collect, HttpError } from './collector.js';
-import { combine, dates, duration, format, localDate, shiftDate, summaries, TIMEZONE, validateRange } from './stats.js';
+import { combine, dates, duration, format, localDate, retainRecentHeartbeats, shiftDate, summaries, TIMEZONE, validateRange } from './stats.js';
 import { heatmap } from './heatmap.js';
 
 function json(body, status = 200) {
@@ -7,6 +7,9 @@ function json(body, status = 200) {
 }
 
 export default {
+  async scheduled(controller, env) {
+    await retainRecentHeartbeats(env.DB.withSession('first-primary'), localDate(controller.scheduledTime / 1000));
+  },
   async fetch(request, env) {
     try {
       const url = new URL(request.url);

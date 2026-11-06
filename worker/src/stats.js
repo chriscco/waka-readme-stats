@@ -23,9 +23,8 @@ export function aggregate(events, day) {
   const start = midnight(day), end = start + DAY;
   const previous = new Map(), points = [];
   for (const event of events) {
-    if (event.type === 'app' && event.category === 'ai coding') continue;
     const prev = previous.get(event.machine);
-    if (prev && event.time > prev.time && event.time - prev.time <= 900) {
+    if (prev && event.time > prev.time && event.time - prev.time <= 1800) {
       const a = Math.max(start, prev.time), b = Math.min(end, event.time);
       if (a < b) { points.push({ time: a, add: prev }); points.push({ time: b, remove: prev }); }
     }
@@ -61,7 +60,7 @@ export async function summaries(db, start, end) {
   for (const row of dirty.results) {
     const beginning = midnight(row.day);
     const events = await db.prepare('SELECT id,time,machine,type,category,language,editor,project,operating_system FROM heartbeats WHERE time BETWEEN ? AND ? ORDER BY time,id')
-      .bind(beginning - 900, beginning + DAY + 900).all();
+      .bind(beginning - 1800, beginning + DAY + 1800).all();
     const summary = aggregate(events.results, row.day);
     await db.prepare('UPDATE daily_summaries SET summary = ?, computed_version = ? WHERE day = ? AND version = ?')
       .bind(JSON.stringify(summary), row.version, row.day, row.version).run();
@@ -99,4 +98,21 @@ export function combine(summaries) {
     }
   }
   return format(total);
+}
+
+export async function retainRecentHeartbeats(db, today = localDate()) {
+  const cutoff = shiftDate(today, -7);
+  await summaries(db, '1970-01-01', shiftDate(cutoff, -1));
+  const source = JSON.stringify({ provider: 'local-heartbeats', timezone: TIMEZONE, timeout: 30, archived_at: today });
+  // Archive and delete atomically; a concurrent late write must leave its raw data intact.
+  await db.batch([
+    db.prepare(`INSERT INTO historical_summaries(day,summary,source)
+      SELECT day,summary,? FROM daily_summaries WHERE day < ? AND version = computed_version AND summary IS NOT NULL
+      AND day NOT IN (SELECT day FROM historical_summaries)`).bind(source, cutoff),
+    db.prepare(`DELETE FROM heartbeats WHERE id IN (
+      SELECT id FROM heartbeats WHERE time < ?
+      AND EXISTS (SELECT 1 FROM historical_summaries WHERE day = date(heartbeats.time - 1800, 'unixepoch', '+8 hours'))
+      AND EXISTS (SELECT 1 FROM historical_summaries WHERE day = date(heartbeats.time + 1800, 'unixepoch', '+8 hours'))
+      ORDER BY time LIMIT 5000)`).bind(midnight(cutoff) - 1800),
+  ]);
 }
