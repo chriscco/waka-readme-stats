@@ -236,3 +236,22 @@ read or write coding heartbeats, daily summaries, or imported WakaTime history.
 Run `scripts/sync-gitea.py` from the project root to collect and replace this snapshot.
 See the root README for manual sync and profile configuration. No Gitea token is
 stored in D1 or sent to the Worker, and no local scheduler is installed.
+
+## Client connects locally but heartbeats never arrive
+
+If `~/.wakatime/wakatime.log` reports connection timeouts to the Worker while
+requests through your proxy succeed, configure the proxy explicitly in WakaTime.
+An editor-launched CLI may not inherit your terminal's proxy environment.
+For this machine's local proxy:
+
+```sh
+~/.wakatime/wakatime-cli --config-write proxy=http://127.0.0.1:7897
+~/.wakatime/wakatime-cli --offline-count
+~/.wakatime/wakatime-cli --sync-offline-activity 0 --sync-ai-disabled
+```
+
+This retains the existing WakaTime destination and `[api_urls]` dual delivery.
+The sync command resends queued real heartbeats without creating a test heartbeat.
+Keep the configured proxy running; otherwise uploads queue offline again. Verify
+actual receipt using D1's `heartbeats` count and latest `time`, not the imported
+historical summaries or Gitea snapshot.
