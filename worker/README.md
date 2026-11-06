@@ -197,13 +197,15 @@ fails instead of publishing incomplete output, so rerun its workflow afterward.
 Normal daily use generally needs one or two dates rebuilt. All-time reads sum
 daily summaries rather than rescanning raw history. Very dense individual days
 are still subject to Worker memory/CPU and D1 result limits; this version targets
-personal coding streams, not organization-wide telemetry. There is no background
-job, arbitrary timezone setting, account system, public dashboard or retention job.
+personal coding streams, not organization-wide telemetry. A daily retention job
+archives completed summaries; timezone customization, accounts and a public
+dashboard are outside this service's scope.
 
 ## Backups and capacity
 
-Raw events are never automatically deleted. Export before changing storage or
-migrations, and store backups privately:
+Raw events expire after the retention window described below; daily summaries
+remain permanent. Export before changing storage or migrations, and store backups
+privately:
 
 ```sh
 npx wrangler d1 export wakatime --remote --output=../coding-stats-backup.sql
